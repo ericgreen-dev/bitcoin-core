@@ -6,16 +6,57 @@ FROM ubuntu:latest as builder
 ARG CORE_VERSION
 
 #
-# Set the source directory for bitcoin core
+# Update Ubuntu
 #
-ARG SOURCE_DIR=/usr/local/src/bitcoin
+RUN apt update && apt -y upgrade
 
 #
-# Copy the build script
+# Install build dependencies
 #
-COPY build.sh /tmp/
+RUN apt -y install git curl gnupg
 
 #
-# Run the build script
+# Set the working dir
 #
-RUN mkdir ${SOURCE_DIR}; (cd ${SOURCE_DIR} && bash /tmp/build.sh)
+WORKDIR /tmp
+
+#
+# Download bitcoin core and signatures
+#
+RUN curl https://bitcoincore.org/bin/bitcoin-core-${CORE_VERSION}/bitcoin-${CORE_VERSION}-$(uname -i)-linux-gnu.tar.gz -o bitcoin-${CORE_VERSION}-$(uname -i)-linux-gnu.tar.gz && \
+    curl https://bitcoincore.org/bin/bitcoin-core-${CORE_VERSION}/SHA256SUMS -o SHA256SUMS && \
+    curl https://bitcoincore.org/bin/bitcoin-core-${CORE_VERSION}/SHA256SUMS.asc -o SHA256SUMS.asc
+
+#
+# Verify checksums
+#
+RUN if [ -z $(sha256sum --ignore-missing --check SHA256SUMS | grep "OK") ]; then echo "Unable to verify checksums." && exit 2; fi
+
+#
+# Install GPG keys and verify signatures
+#
+RUN git clone https://github.com/bitcoin-core/guix.sigs && \
+    gpg --import guix.sigs/builder-keys/* && \
+    if [ -z $(gpg --verify SHA256SUMS.asc 2>&1 | grep "gpg: Good signature") ]; then echo "Unable to verify checksum signatures." && exit 3; fi
+
+#
+# Extract bitcoin core
+#
+RUN tar -zxvf bitcoin-${CORE_VERSION}-$(uname -i)-linux-gnu.tar.gz && mv bitcoin-${CORE_VERSION} bitcoin
+
+#
+# Cleanup files and paths
+#
+RUN rm bitcoin/README.md && \
+    mkdir bitcoin/etc && \
+    mv bitcoin/bitcoin.conf bitcoin/etc/bitcoin.conf
+
+#
+# Minimal bitcoin core
+#
+FROM ubuntu:latest
+
+#
+# Copy verified bitcoin core binaries and libraries
+#
+COPY --from=builder /tmp/bitcoin /usr/local
