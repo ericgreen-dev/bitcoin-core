@@ -60,3 +60,10 @@ FROM ubuntu:latest
 # Copy verified bitcoin core binaries and libraries
 #
 COPY --from=builder /tmp/bitcoin /usr/local
+
+#
+# Update and install tor
+#
+RUN apt -y update && \
+    apt -y install tor && \
+    apt clean && rm -rf /var/lib/apt/lists/*
